@@ -1,0 +1,33 @@
+name: Build IPA
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Build (unsigned)
+        run: |
+          xcodebuild -project LoveDays.xcodeproj -scheme LoveDays \
+            -configuration Release -sdk iphoneos -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Package IPA
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/LoveDays.app Payload/
+          # ad-hoc sign so the app-group entitlement (widget data) survives sideloading
+          codesign -f -s - --entitlements Config/Widget.entitlements Payload/LoveDays.app/PlugIns/LoveDaysWidget.appex || true
+          codesign -f -s - --entitlements Config/LoveDays.entitlements Payload/LoveDays.app || true
+          zip -r LoveDays.ipa Payload
+          echo "--- IPA contents (widget check) ---"
+          unzip -l LoveDays.ipa | grep -i appex || (echo "WIDGET MISSING FROM IPA" && exit 1)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LoveDays-ipa
+          path: LoveDays.ipa
